@@ -1,0 +1,5 @@
+#ignore .wav dataset
+data/Voice\ Emotion\ Dataset/
+
+#keep generated spectrograms
+!data/spectrograms/**
