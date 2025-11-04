@@ -2,7 +2,7 @@
 ===============================================================================
 Title       : feature_extraction_for_baselines.py
 Project     : Speech Emotion Recognition
-Authors     : 
+Authors     : Alexander Dimayuga
 Created     : November 3, 2025
 Description : 
     Extracts features, directly from the audio files, such as MFCC and RMS Energy 
