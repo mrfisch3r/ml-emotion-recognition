@@ -11,15 +11,15 @@ Description :
     pipeline includes loading features from "features.csv", splitting dataset
     into train/validation/test (80/10/10), standard scaling of features, 
     training a KNeighborsClassifier (with default k=5), and evaluating using
-    metricsl ike accuracy.
+    metrics ike accuracy.
 
 Dependencies:
-    pandas
-    numpy
-    seaborn
-    matplotlib
-    sklearn
-    os
+    - pandas
+    - numpy
+    - seaborn
+    - matplotlib
+    - sklearn
+    - os
 
 Usage:
     python .\knn_baseline.py
@@ -33,6 +33,7 @@ Notes:
     - Feature importance?
     - Save model 
     - Make CLI friendly
+    - Validation set not used
     - And more...
 ===============================================================================
 """
@@ -102,8 +103,8 @@ def loadAndPreprocessDataset():
 
     # Confirm these shapes
     print()
-    print("================================================")
     print("Train | Validation | Test Shapes")
+    print("================================================")
     print("Train: ", X_train.shape)
     print("Validation: ", X_val.shape)
     print("Test: ", X_test.shape)
@@ -173,7 +174,6 @@ def main():
 
     class_names = sorted(y_train.unique())
     predictAndEvaluate(knn, X_test_scaled, y_test, class_names=class_names)
-
 
 if __name__ == "__main__":
     main()
