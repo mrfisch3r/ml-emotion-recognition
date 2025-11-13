@@ -48,6 +48,8 @@ import sklearn
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GridSearchCV
+from sklearn.pipeline import Pipeline
 from sklearn.metrics import (
     accuracy_score,
     precision_score,
@@ -62,7 +64,12 @@ import os
 
 # Global Variables
 # =============================================================================
-
+param_grid = {
+    'knn__n_neighbors' : [1, 3, 5, 7, 9, 15, 25],
+    'knn__weights' : ['uniform', 'distance'],
+    'knn__metric' : ['euclidean', 'manhattan', 'minkowski'],
+    'knn__p' : [1, 2], # For metric='minkowski'
+}
 # =============================================================================
 
 # Helper Functions
@@ -95,7 +102,7 @@ def loadAndPreprocessDataset():
         X_temp, y_temp, test_size=0.5, random_state=42, stratify=y_temp
     )
 
-    # Scale features
+    # Scale features --> Alternatively could do Min-Max, Robust, etc...
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_val_scaled = scaler.transform(X_val)
@@ -111,7 +118,34 @@ def loadAndPreprocessDataset():
     print("================================================")
     print()
 
-    return X_train_scaled, X_val_scaled, X_test_scaled, y_train, y_val, y_test, scaler
+    return X_train_scaled, X_val_scaled, X_test_scaled, y_train, y_val, y_test, scaler, X_train, y_train
+
+def gridSearch(X_train, y_train): 
+    pipe = Pipeline([
+        ('scaler', StandardScaler()),
+        ('knn', KNeighborsClassifier())
+    ])
+
+    grid = GridSearchCV(
+        estimator=pipe,
+        param_grid=param_grid,
+        cv=5,               # 5-fold cross-validation
+        scoring='accuracy', # or F1, roc_auc, etc...
+        n_jobs=-1,   
+        verbose=3
+    )
+
+    grid.fit(X_train, y_train)
+
+    print("================================================")
+    print("Best parameters: ", grid.best_params_)
+    print("Best CV score:", grid.best_score_)
+    print("================================================")
+    print()
+
+    best_knn = grid.best_estimator_
+    
+    return best_knn
 
 def knnModel(X_train, y_train):
     knn = KNeighborsClassifier(n_neighbors=5)
@@ -168,12 +202,13 @@ def predictAndEvaluate(knn, X_test, y_test, class_names=None):
 def main():
     printVersions()
 
-    X_train_scaled, X_val_scaled, X_test_scaled, y_train, y_val, y_test, scaler = loadAndPreprocessDataset()
+    X_train_scaled, X_val_scaled, X_test_scaled, y_train, y_val, y_test, scaler, X_train, y_train = loadAndPreprocessDataset()
 
-    knn = knnModel(X_train_scaled, y_train)
+    knn = gridSearch(X_train, y_train)
+    # knn = knnModel(X_train_scaled, y_train)
 
-    class_names = sorted(y_train.unique())
-    predictAndEvaluate(knn, X_test_scaled, y_test, class_names=class_names)
+    # class_names = sorted(y_train.unique())
+    # predictAndEvaluate(knn, X_test_scaled, y_test, class_names=class_names)
 
 if __name__ == "__main__":
     main()
