@@ -5,13 +5,13 @@ Project     : Speech Emotion Recognition
 Authors     : Alexander Dimayuga
 Created     : November 3, 2025
 Description : 
-    KNN is one of our baseline baseline machine learning models for the Speech
+    KNN is one of our baseline machine learning models for the Speech
     Emotion Recognition project. It uses extracted audio features (like MFCCs) 
     to predict the emotion label (happy, angry, neutral). Currently, this 
     pipeline includes loading features from "features.csv", splitting dataset
     into train/validation/test (80/10/10), standard scaling of features, 
     training a KNeighborsClassifier (with default k=5), and evaluating using
-    metrics ike accuracy.
+    metrics like accuracy.
 
 Dependencies:
     - pandas
@@ -202,11 +202,16 @@ def predictAndEvaluate(knn, X_test, y_test, class_names=None):
 def main():
     printVersions()
 
+    # 1.) Retrieve scaled + unscaled training/validation/test features and targets
     X_train_scaled, X_val_scaled, X_test_scaled, y_train, y_val, y_test, scaler, X_train, y_train = loadAndPreprocessDataset()
 
+    # 2a.) Train tuned model 
     knn = gridSearch(X_train, y_train)
+
+    # 2b.) Train untuned model [NOTE: Comment out if using tuned and vice versa]
     # knn = knnModel(X_train_scaled, y_train)
 
+    # 3.) Predict and Evaluate
     # class_names = sorted(y_train.unique())
     # predictAndEvaluate(knn, X_test_scaled, y_test, class_names=class_names)
 
