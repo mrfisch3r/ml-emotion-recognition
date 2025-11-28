@@ -9,9 +9,8 @@ Description :
     Emotion Recognition project. It uses extracted audio features (like MFCCs) 
     to predict the emotion label (happy, angry, neutral). Currently, this 
     pipeline includes loading features from "features.csv", splitting dataset
-    into train/validation/test (80/10/10), standard scaling of features, 
-    training a SVM classifier (linear or RBF kernel), and evaluating using
-    metrics like accuracy.
+    into train/test (80/20), standard scaling of features, training a SVM 
+    classifier (linear or RBF kernel), and evaluating using metrics like accuracy.
 
 Dependencies:
     - pandas
@@ -26,12 +25,12 @@ Usage:
 
 Notes:
     TODO: MORE IMPROVEMENTS
-    - Needs hyperparameter tuning
+    - Continue tuning
     - Include more data visualizations
     - Feature importance?
-    - Save model 
-    - Make CLI friendly
-    - Validation set not used
+    - Find a way to automatically save best parameters, confusion matrix, model evaluation metrics, classifcation report, etc
+    - Refactor code to reduce redundancy and improve modularity/efficiency
+    - Standardize between SVM and KNN baseline scripts (pipeline structure, scalar, function names, etc)
     - And more...
 ===============================================================================
 """
@@ -57,6 +56,8 @@ from sklearn.metrics import (
     ConfusionMatrixDisplay
 )
 import os
+import joblib
+from datetime import datetime
 # =============================================================================
 
 # Global Variables
@@ -93,33 +94,26 @@ def loadAndPreprocessDataset():
     X = df.drop(columns=["label"])              # Includes all features
     y = df["label"]                             # Predicting for label
 
-    # Split into Train (80%) and Temp (20%)
-    X_train, X_temp, y_train, y_temp = train_test_split(
+    # Split into Train (80%) and Test (20%)
+    X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size = 0.2, random_state=42, stratify=y
-    )
-
-    # Split Temp (20%) into Validation (10%) and Test (10%)
-    X_val, X_test, y_val, y_test = train_test_split(
-        X_temp, y_temp, test_size=0.5, random_state=42, stratify=y_temp
     )
 
     # Scale features
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
-    X_val_scaled = scaler.transform(X_val)
     X_test_scaled = scaler.transform(X_test)
 
     # Confirm these shapes
     print()
-    print("Train | Validation | Test Shapes")
+    print("Train | Test Shapes")
     print("================================================")
     print("Train: ", X_train.shape)
-    print("Validation: ", X_val.shape)
     print("Test: ", X_test.shape)
     print("================================================")
     print()
 
-    return X_train_scaled, X_val_scaled, X_test_scaled, y_train, y_val, y_test, scaler
+    return X_train_scaled, X_test_scaled, y_train, y_test, scaler
 
 def gridSearch(model, param_grid, X_train, y_train):
     grid = GridSearchCV(
@@ -141,7 +135,7 @@ def gridSearch(model, param_grid, X_train, y_train):
 
     best_svm = grid.best_estimator_
     
-    return best_svm
+    return best_svm, grid.best_score_
 
 def svmModel(X_train, y_train):
     # Create a SVM Classifier [NOTE: Comment one or the other out]
@@ -200,21 +194,35 @@ def predictAndEvaluate(clf, X_test, y_test, class_names=None):
 def main():
     printVersions()
 
-    # 1.) Retrieve scaled training/validation/test features and targets
-    X_train_scaled, X_val_scaled, X_test_scaled, y_train, y_val, y_test, scaler = loadAndPreprocessDataset()
+    # 1.) Retrieve scaled training/test features and targets
+    X_train_scaled, X_test_scaled, y_train, y_test, scaler = loadAndPreprocessDataset()
     
     # 2a.) Train tuned model [NOTE: Use whichever model produces more accurate results (Linear vs RBF kernel)]
     print("\n--- Grid Search: Linear SVM ---")
-    best_linear = gridSearch(svm.SVC(kernel='linear'), param_grid_linear, X_train_scaled, y_train)
+    best_linear, linear_score = gridSearch(svm.SVC(kernel='linear'), param_grid_linear, X_train_scaled, y_train)
     print("\n--- Grid Search: RBF SVM ---")
-    best_rbf = gridSearch(svm.SVC(kernel='rbf'), param_grid_RBF, X_train_scaled, y_train)
+    best_rbf, rbf_score = gridSearch(svm.SVC(kernel='rbf'), param_grid_RBF, X_train_scaled, y_train)
+
+    # Select best model based on CV score
+    if rbf_score >= linear_score:
+        print(f"Selected RBF SVM with CV Score: {rbf_score}")
+        svm_model = best_rbf
+    else:
+        print(f"Selected Linear SVM with CV Score: {linear_score}")
+        svm_model = best_linear
 
     # 2b.) Train untuned model [NOTE: Comment out if using tuned and vice versa]
     # svm_model = svmModel(X_train_scaled, y_train)
 
     # 3.) Predict and Evaluate
-    # class_names = sorted(y_train.unique())
-    # predictAndEvaluate(svm_model, X_test_scaled, y_test, class_names=class_names) # NOTE: Change model name as needed
+    class_names = sorted(y_train.unique())
+    predictAndEvaluate(svm_model, X_test_scaled, y_test, class_names=class_names) # NOTE: Change model name as needed
+
+    # 4.) Save model
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    filename = f"../models/svm/svm_model_{date_str}.joblib"
+    joblib.dump(svm_model, filename)
+    print(f"SVM model saved to: {filename}")
 
 if __name__ == "__main__":
     main()
