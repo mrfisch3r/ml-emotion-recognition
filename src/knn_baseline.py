@@ -2,8 +2,9 @@
 ===============================================================================
 Title       : knn_baseline.py
 Project     : Speech Emotion Recognition
-Authors     : Alexander Dimayuga
+Authors     : Alexander Dimayuga, Harrison Jacob
 Created     : November 3, 2025
+Last Modified: November 30, 2025
 Description : 
     KNN is one of our baseline machine learning models for the Speech
     Emotion Recognition project. It uses extracted audio features (like MFCCs) 
@@ -42,11 +43,14 @@ import seaborn as sns
 import matplotlib
 import matplotlib.pyplot as plt
 import sklearn
+from sklearn.preprocessing import StandardScaler, LabelEncoder # <--- Add LabelEncoder
+from sklearn.decomposition import PCA
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import Pipeline
+from sklearn.decomposition import PCA
 from sklearn.metrics import (
     accuracy_score,
     precision_score,
@@ -63,12 +67,28 @@ from datetime import datetime
 
 # Global Variables
 # =============================================================================
-param_grid = {
-    'knn__n_neighbors' : [1, 3, 5, 7, 9, 15, 25],
-    'knn__weights' : ['uniform', 'distance'],
-    'knn__metric' : ['euclidean', 'manhattan', 'minkowski'],
-    'knn__p' : [1, 2], # For metric='minkowski'
-}
+param_grid = [
+    # Case 1: Metrics that do NOT use the 'p' parameter
+    {
+            'pca__n_components': [0.95, 0.99, None], # None means "keep all features"
+            'knn__n_neighbors': [3, 5, 7],
+            'knn__weights': ['distance'],
+            'knn__metric': ['manhattan'] 
+    },
+    # Case 2: euclidian & cosine
+    {
+        'knn__n_neighbors': [1, 3, 5, 7, 9, 15, 25],
+        'knn__weights': ['uniform', 'distance'],
+        'knn__metric': ['euclidean', 'cosine'] 
+    },
+    # Case 3: minkowski
+    {
+        'knn__n_neighbors': [1, 3, 5, 7, 9, 15, 25],
+        'knn__weights': ['uniform', 'distance'],
+        'knn__metric': ['minkowski'],
+        'knn__p': [1, 2]
+    }
+]
 # =============================================================================
 
 # Helper Functions
@@ -86,10 +106,18 @@ def printVersions():
     print()
 
 def loadAndPreprocessDataset():
-    df = pd.read_csv("../data/features.csv")    # Change if need be...
+    df = pd.read_csv("CS460G-Speech-Emotion-Recognition/data/features.csv")    # Change if need be...
 
     X = df.drop(columns=["label"])              # Includes all features
     y = df["label"]                             # Predicting for label
+
+    # --- NEW: Encode Labels (String -> Integer) ---
+    le = LabelEncoder()
+    y = le.fit_transform(y)  # Converts 'anger','happy' -> 0, 1
+    
+    # Save the original class names for plotting later
+    class_names = le.classes_ 
+    # ----------------------------------------------
 
     # Split into Train (80%) and Test (20%)
     X_train, X_test, y_train, y_test = train_test_split(
@@ -110,11 +138,12 @@ def loadAndPreprocessDataset():
     print("================================================")
     print()
 
-    return X_train_scaled, X_test_scaled, y_train, y_test, scaler, X_train, X_test
+    return X_train_scaled, X_test_scaled, y_train, y_test, scaler, X_train, X_test, class_names
 
 def gridSearch(X_train, y_train): 
     pipe = Pipeline([
         ('scaler', StandardScaler()),
+        ('pca', PCA()),
         ('knn', KNeighborsClassifier())
     ])
 
@@ -123,7 +152,7 @@ def gridSearch(X_train, y_train):
         param_grid=param_grid,
         cv=5,               # 5-fold cross-validation
         scoring='accuracy', # or F1, roc_auc, etc...
-        n_jobs=-1,   
+        n_jobs=1,   
         verbose=3
     )
 
@@ -195,7 +224,7 @@ def main():
     printVersions()
 
     # 1.) Retrieve scaled + unscaled training/validation/test features and targets
-    X_train_scaled, X_test_scaled, y_train, y_test, scaler, X_train, X_test = loadAndPreprocessDataset()
+    X_train_scaled, X_test_scaled, y_train, y_test, scaler, X_train, X_test, class_names = loadAndPreprocessDataset()
 
     # 2a.) Train tuned model 
     knn_model = gridSearch(X_train, y_train)
@@ -204,13 +233,12 @@ def main():
     # knn = knnModel(X_train_scaled, y_train)
 
     # 3.) Predict and Evaluate
-    class_names = sorted(y_train.unique())
     predictAndEvaluate(knn_model, X_test, y_test, class_names=class_names) # NOTE: X_test or X_test_scaled based on if model is tuned or not
-    # predictAndEvaluate(knn, X_test_scaled, y_test, class_names=class
+    
 
     # 4.) Save model
     date_str = datetime.now().strftime("%Y-%m-%d")
-    filename = f"../models/knn/knn_model_{date_str}.joblib"
+    filename = f"CS460G-Speech-Emotion-Recognition/models/knn/knn_model_{date_str}.joblib"
     joblib.dump(knn_model, filename)
     print(f"KNN model saved to: {filename}")
 
