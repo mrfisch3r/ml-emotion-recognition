@@ -2,8 +2,9 @@
 ===============================================================================
 Title       : svm_baseline.py
 Project     : Speech Emotion Recognition
-Authors     : Alexander Dimayuga
+Authors     : Alexander Dimayuga, Harrison Jacob
 Created     : November 3, 2025
+Last Modified: December 4, 2025
 Description : 
     SVM is one of our baseline machine learning models for the Speech
     Emotion Recognition project. It uses extracted audio features (like MFCCs) 
@@ -44,6 +45,7 @@ import matplotlib.pyplot as plt
 import sklearn
 from sklearn import svm
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import learning_curve
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import (
@@ -89,7 +91,7 @@ def printVersions():
     print()
 
 def loadAndPreprocessDataset():
-    df = pd.read_csv("../data/features.csv")    # Change if need be...
+    df = pd.read_csv("CS460G-Speech-Emotion-Recognition/data/features.csv")    # Change if need be...
 
     X = df.drop(columns=["label"])              # Includes all features
     y = df["label"]                             # Predicting for label
@@ -187,6 +189,35 @@ def predictAndEvaluate(clf, X_test, y_test, class_names=None):
     plt.xlabel("Predicted Label")
     plt.tight_layout()
     plt.show()
+
+def plot_learning_curve(estimator, X, y, title="Learning Curve"):
+    """
+    Plots training vs validation score as dataset size grows.
+    """
+    train_sizes, train_scores, test_scores = learning_curve(
+        estimator, X, y, cv=5, n_jobs=1, 
+        train_sizes=np.linspace(0.1, 1.0, 5), scoring="accuracy"
+    )
+
+    train_mean = np.mean(train_scores, axis=1)
+    train_std = np.std(train_scores, axis=1)
+    test_mean = np.mean(test_scores, axis=1)
+    test_std = np.std(test_scores, axis=1)
+
+    plt.figure(figsize=(8, 6))
+    plt.plot(train_sizes, train_mean, 'o-', color="r", label="Training score")
+    plt.plot(train_sizes, test_mean, 'o-', color="g", label="Cross-validation score")
+
+    # Plot the variance bands (standard deviation)
+    plt.fill_between(train_sizes, train_mean - train_std, train_mean + train_std, alpha=0.1, color="r")
+    plt.fill_between(train_sizes, test_mean - test_std, test_mean + test_std, alpha=0.1, color="g")
+
+    plt.title(title)
+    plt.xlabel("Training examples")
+    plt.ylabel("Accuracy Score")
+    plt.legend(loc="best")
+    plt.grid()
+    plt.show()
 # =============================================================================
 
 # Main Function
@@ -197,11 +228,13 @@ def main():
     # 1.) Retrieve scaled training/test features and targets
     X_train_scaled, X_test_scaled, y_train, y_test, scaler = loadAndPreprocessDataset()
     
-    # 2a.) Train tuned model [NOTE: Use whichever model produces more accurate results (Linear vs RBF kernel)]
+    # 2a.) Train tuned model [NOTE: Use whichever model produces more accurate results (Linear vs RBF kernel)] and visualize
     print("\n--- Grid Search: Linear SVM ---")
     best_linear, linear_score = gridSearch(svm.SVC(kernel='linear'), param_grid_linear, X_train_scaled, y_train)
+    plot_learning_curve(best_linear, X_train_scaled, y_train, title=f"Linear SVM Learning Curve (Acc: {linear_score:.3f})")
     print("\n--- Grid Search: RBF SVM ---")
     best_rbf, rbf_score = gridSearch(svm.SVC(kernel='rbf'), param_grid_RBF, X_train_scaled, y_train)
+    plot_learning_curve(best_rbf, X_train_scaled, y_train, title=f"RBF SVM Learning Curve (Acc: {rbf_score:.3f})")
 
     # Select best model based on CV score
     if rbf_score >= linear_score:
