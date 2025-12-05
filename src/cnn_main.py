@@ -2,8 +2,9 @@
 ===============================================================================
 Title       : cnn_main.py
 Project     : Speech Emotion Recognition
-Authors     : Kevin Dawson-Fischer
+Authors     : Kevin Dawson-Fischer, Harrison Jacob
 Created     : November 3, 2025
+Last Modified: December 4, 2025
 Description : 
     Train and evaluate a simple 2d CNN on spectrogram images for speech emotion recognition (e.g., anger, happy, neutral).
 
@@ -70,7 +71,7 @@ EMOTIONS: List[str] = ["anger", "happy", "neutral"]
 IMG_SIZE: int = 128 #spectrograms will be resized to IMG_SIZE x IMG_SIZE
 BATCH_SIZE: int = 32
 NUM_EPOCHS: int = 20
-LEARNING_RATE: float = 1e-3
+LEARNING_RATE: float = 0.1
 
 #fractions for validation and test splits
 VAL_SPLIT: float = 0.15
@@ -311,6 +312,12 @@ def train_model(
     best_val_acc = 0.0
     best_state_dict = None
 
+    # Initialize empty lists to store history
+    train_losses = []
+    val_losses = []
+    train_accs = []
+    val_accs = []
+
     for epoch in range(1, NUM_EPOCHS + 1):
         train_loss, train_acc = train_one_epoch(
             model, train_loader, criterion, optimizer, device
@@ -323,6 +330,13 @@ def train_model(
             f"| Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}"
         )
 
+
+        # Save the metrics for this epoch
+        train_losses.append(train_loss)
+        val_losses.append(val_loss)
+        train_accs.append(train_acc)
+        val_accs.append(val_acc)
+
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             best_state_dict = model.state_dict()
@@ -331,7 +345,7 @@ def train_model(
     if best_state_dict is not None:
         model.load_state_dict(best_state_dict)
     
-    return model
+    return model, train_losses, val_losses, train_accs, val_accs
 
 def plot_and_save_confusion_matrix(
     labels: np.ndarray,
@@ -374,6 +388,33 @@ def plot_and_save_confusion_matrix(
     plt.savefig(output_path)
     plt.close(fig)
 
+def plot_training_history(train_losses, val_losses, train_accs, val_accs):
+    epochs = range(1, len(train_losses) + 1)
+
+    plt.figure(figsize=(12, 5))
+
+    # Plot Loss
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs, train_losses, 'b-', label='Training Loss')
+    plt.plot(epochs, val_losses, 'r-', label='Validation Loss')
+    plt.title('Training & Validation Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+
+    # Plot Accuracy
+    plt.subplot(1, 2, 2)
+    plt.plot(epochs, train_accs, 'b-', label='Training Accuracy')
+    plt.plot(epochs, val_accs, 'r-', label='Validation Accuracy')
+    plt.title('Training & Validation Accuracy')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.legend()
+
+    plt.tight_layout()
+    plt.savefig(OUTPUT_DIR / "training_history.png")
+    plt.show()
+
 def save_classification_report(
     labels: np.ndarray, preds: np.ndarray, classes: List[str], output_path: Path
 ) -> None:
@@ -381,7 +422,7 @@ def save_classification_report(
     Save a text classification report (precision/recall/F1 per class).
     """
 
-    report = classification_report(labels, preds, target_names=classes, digits=4)
+    report = classification_report(labels, preds, target_names=classes, digits=4, zero_division=0)
     print("Test Classification Report:")
     print(report)
 
@@ -413,8 +454,9 @@ def main() -> None:
     #instantiate CNN model and move it to the selected device
     model = EmotionCNN(num_classes=len(EMOTIONS)).to(device)
 
-    #train the model and keep the best weights based on validation accuracy
-    model = train_model(model, train_loader, val_loader, device)
+    model, train_losses, val_losses, train_accs, val_accs = train_model(
+        model, train_loader, val_loader, device
+    )
 
     #evaluate on the held-out test set
     criterion = nn.CrossEntropyLoss()
@@ -422,6 +464,8 @@ def main() -> None:
         model, test_loader, criterion, device
     )
     print(f"\nFinal Test Loss: {test_loss:.4f}, Test Accuracy: {test_acc:.4f}")
+
+    plot_training_history(train_losses, val_losses, train_accs, val_accs)
 
     #save metrics to files for the report
     save_classification_report(
