@@ -2,7 +2,7 @@
 ===============================================================================
 Title       : cnn_main.py
 Project     : Speech Emotion Recognition
-Authors     : Kevin Dawson-Fischer
+Authors     : Kevin Dawson-Fischer, Braxton Goble
 Created     : November 3, 2025
 Description : 
     Train and evaluate a simple 2d CNN on spectrogram images for speech emotion recognition (e.g., anger, happy, neutral).
@@ -52,6 +52,8 @@ from torchvision import transforms
 from sklearn.metrics import classification_report, confusion_matrix
 import matplotlib.pyplot as plt
 import itertools
+import joblib
+from datetime import datetime
 # =============================================================================
 
 # Global Variables
@@ -61,7 +63,6 @@ PROJECT_ROOT = THIS_DIR.parent #.../ROOT
 
 #root directory that contains one subfolder per emotion class
 DATA_ROOT = PROJECT_ROOT / "data" / "spectrograms" #.../data/spectrograms
-
 
 #class names (must match folder names under DATA_ROOT)
 EMOTIONS: List[str] = ["anger", "happy", "neutral"]
@@ -80,7 +81,8 @@ TEST_SPLIT: float = 0.15
 RANDOM_SEED: int = 420
 
 #directory where metrics, reports, plots will be saved
-OUTPUT_DIR = PROJECT_ROOT / "metrics" / "cnn_outputs" #.../data/cnn_outputs
+OUTPUT_DIR = PROJECT_ROOT / "metrics" / "cnn_outputs" #.../metrics/cnn_outputs
+MODEL_DIR = PROJECT_ROOT / "models" / "cnn" #.../models/cnn
 # =============================================================================
 
 # Helper Functions
@@ -131,7 +133,7 @@ def get_transforms() -> transforms.Compose:
     """
     Transform pipeline:
     - Resize to IMG_SIZE x IMG_SIZE
-    - Convert to tesnor
+    - Convert to tensor
     - Normalize to roughly [-1, 1]
     """
 
@@ -217,20 +219,20 @@ class EmotionCNN(nn.Module):
         return x
 
 def train_one_epoch(
-    model: nn.Module,
+    cnn_model: nn.Module,
     loader: DataLoader,
     criterion: nn.Module,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
 ) -> Tuple[float, float]:
     """
-    Train the model for a single epoch
+    Train the cnn_model for a single epoch
 
     Returns:
         (average_loss, accuracy)
     """
 
-    model.train()
+    cnn_model.train()
     running_loss = 0.0
     correct = 0
     total = 0
@@ -240,7 +242,7 @@ def train_one_epoch(
         labels = labels.to(device).long()
 
         optimizer.zero_grad()
-        outputs = model(inputs)
+        outputs = cnn_model(inputs)
         loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
@@ -255,19 +257,19 @@ def train_one_epoch(
     return avg_loss, accuracy
 
 def evaluate(
-    model: nn.Module,
+    cnn_model: nn.Module,
     loader: DataLoader,
     criterion: nn.Module,
     device: torch.device,
 ) -> Tuple[float, float, np.ndarray, np.ndarray]:
     """
-    Evaluate the model on a validation or test set.
+    Evaluate the cnn_model on a validation or test set.
 
     Returns:
         (average_loss, accuracy, all_labels, all_predictions)
     """
     
-    model.eval()
+    cnn_model.eval()
     running_loss = 0.0
     correct = 0
     total = 0
@@ -279,7 +281,7 @@ def evaluate(
             inputs = inputs.to(device)
             labels = labels.to(device).long()
 
-            outputs = model(inputs)
+            outputs = cnn_model(inputs)
             loss = criterion(outputs, labels)
 
             running_loss += loss.item() * inputs.size(0)
@@ -294,28 +296,28 @@ def evaluate(
     accuracy = correct / total
     return avg_loss, accuracy, np.array(all_labels), np.array(all_preds)
 
-def train_model(
-    model: nn.Module,
+def train_cnn_model(
+    cnn_model: nn.Module,
     train_loader: DataLoader,
     val_loader: DataLoader,
     device: torch.device,
 ) -> nn.Module:
     """
     Full training loop across NUM_EPOCHS with validation.
-    Keeps the best model weights according to validation accuracy.
+    Keeps the best cnn_model weights according to validation accuracy.
     """
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    optimizer = torch.optim.Adam(cnn_model.parameters(), lr=LEARNING_RATE)
 
     best_val_acc = 0.0
     best_state_dict = None
 
     for epoch in range(1, NUM_EPOCHS + 1):
         train_loss, train_acc = train_one_epoch(
-            model, train_loader, criterion, optimizer, device
+            cnn_model, train_loader, criterion, optimizer, device
         )
-        val_loss, val_acc, _, _ = evaluate(model, val_loader, criterion, device)
+        val_loss, val_acc, _, _ = evaluate(cnn_model, val_loader, criterion, device)
 
         print(
             f"Epoch {epoch:02d}/{NUM_EPOCHS:02d} "
@@ -325,13 +327,13 @@ def train_model(
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
-            best_state_dict = model.state_dict()
+            best_state_dict = cnn_model.state_dict()
 
-    #restore best model according to validation accuracy
+    #restore best cnn_model according to validation accuracy
     if best_state_dict is not None:
-        model.load_state_dict(best_state_dict)
+        cnn_model.load_state_dict(best_state_dict)
     
-    return model
+    return cnn_model
 
 def plot_and_save_confusion_matrix(
     labels: np.ndarray,
@@ -397,6 +399,7 @@ def save_classification_report(
 def main() -> None:
     #create output directory and set random seeds
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
     torch.manual_seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
@@ -410,16 +413,16 @@ def main() -> None:
         root_dir=DATA_ROOT, classes=EMOTIONS
     )
 
-    #instantiate CNN model and move it to the selected device
-    model = EmotionCNN(num_classes=len(EMOTIONS)).to(device)
+    #instantiate CNN cnn_model and move it to the selected device
+    cnn_model = EmotionCNN(num_classes=len(EMOTIONS)).to(device)
 
-    #train the model and keep the best weights based on validation accuracy
-    model = train_model(model, train_loader, val_loader, device)
+    #train the cnn_model and keep the best weights based on validation accuracy
+    cnn_model = train_cnn_model(cnn_model, train_loader, val_loader, device)
 
     #evaluate on the held-out test set
     criterion = nn.CrossEntropyLoss()
     test_loss, test_acc, test_labels, test_preds = evaluate(
-        model, test_loader, criterion, device
+        cnn_model, test_loader, criterion, device
     )
     print(f"\nFinal Test Loss: {test_loss:.4f}, Test Accuracy: {test_acc:.4f}")
 
@@ -430,6 +433,12 @@ def main() -> None:
     plot_and_save_confusion_matrix(
         test_labels, test_preds, EMOTIONS, OUTPUT_DIR / "cnn_confusion_matrix.png"
     )
+
+    # Save model with date
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    filename = MODEL_DIR / f"cnn_model_{date_str}.joblib"
+    joblib.dump(cnn_model, filename)
+    print(f"CNN model saved to: {filename}")
 
 
 if __name__ == "__main__":
