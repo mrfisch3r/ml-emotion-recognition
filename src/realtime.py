@@ -1,43 +1,37 @@
 """
 ===============================================================================
-Title       : realtime.py
+Title       : realtime_knn.py
 Project     : Speech Emotion Recognition
 Authors     : Braxton Goble
 Created     : November 5, 2025
 Description : 
-    A real-time speech emotion recognition application using pre-trained models:
-    CNN, KNN, and SVM. The application captures audio from the microphone,  processes it, and predicts the emotion in real-time.
-    The GUI allows users to select the model and displays the predicted emotion along with a spectrogram.
-
-    
+    A real-time speech emotion recognition application using a pre-trained KNN model.
+    The application captures audio from the microphone, processes it, and predicts 
+    the emotion in real-time. The GUI displays the predicted emotion along with 
+    a spectrogram.
 
 Dependencies:
     - Python 3.9+
-    - torch, torchvision
     - numpy
     - pillow (PIL)
     - scikit-learn
     - matplotlib
-    -tkinter
+    - tkinter
+    - librosa
+    - sounddevice
+    - joblib
 
 Usage:
-    python realtime.py
-
+    python realtime_knn.py
 
 Notes:
-    - CNN model is fully predicting anger 100% of the time and never moves. Model has been retrained 
-        still showing the same issue. Might need to revisit with different hyperparamters I am not sure.
-    - KNN works great through and performs as expected.
-    - SVM has the same problem as CNN where it predicts only one class all the time. I have not investigated
-      this further yet.
+    - KNN model performs well with extracted audio features
 ===============================================================================
 """
 import tkinter as tk
-from tkinter import ttk
 from PIL import Image, ImageTk
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
 import librosa
 import sounddevice as sd
 from io import BytesIO
@@ -53,55 +47,10 @@ warnings.filterwarnings('ignore', category=UserWarning)
 SAMPLE_RATE = 16000
 CHUNK_DURATION = 3.0  # 3 seconds to match training
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-CNN_MODEL_PATH = PROJECT_ROOT / "models" / "cnn" / "cnn_model_2025-12-05.joblib"
 KNN_MODEL_PATH = PROJECT_ROOT / "models" / "knn" / "knn_model_2025-11-28.joblib"
-SVM_MODEL_PATH = PROJECT_ROOT / "models" / "svm" / "svm_model_2025-11-28.joblib"
 EMOTIONS = ["anger", "happy", "neutral"]
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# ---- CNN MODEL DEFINITION (from cnn_optimized.py) ----
-class EmotionCNN(torch.nn.Module):
-    """CNN for spectrogram classification - matches training architecture"""
-    
-    def __init__(self, num_classes: int):
-        super().__init__()
-        IMG_SIZE = 128  # From training code
-        
-        self.features = torch.nn.Sequential(
-            torch.nn.Conv2d(in_channels=1, out_channels=16, kernel_size=3, padding=1),
-            torch.nn.ReLU(),
-            torch.nn.MaxPool2d(kernel_size=2),
-            
-            torch.nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, padding=1),
-            torch.nn.ReLU(),
-            torch.nn.MaxPool2d(kernel_size=2),
-            
-            torch.nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1),
-            torch.nn.ReLU(),
-            torch.nn.MaxPool2d(kernel_size=2),
-        )
-        
-        reduced_size = IMG_SIZE // 8
-        flattened_dim = 64 * reduced_size * reduced_size
-        
-        # Classifier with 128 hidden units to match saved checkpoint
-        self.classifier = torch.nn.Sequential(
-            torch.nn.Flatten(),
-            torch.nn.Linear(flattened_dim, 128),  
-            torch.nn.ReLU(),
-            torch.nn.Dropout(p=0.3),
-            torch.nn.Linear(128, num_classes),  
-        )
-    
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.features(x)
-        x = self.classifier(x)
-        return x
-
-# ---- LOAD MODELS ----
-print(f"Using device: {DEVICE}")
-
-# Check available audio devices
+# ---- LOAD KNN MODEL ----
 print("\nAvailable audio devices:")
 print("="*60)
 try:
@@ -116,31 +65,13 @@ except Exception as e:
     print(f"Could not query audio devices: {e}")
 print("="*60)
 
-# CNN Model
-try:
-    cnn_model = joblib.load(CNN_MODEL_PATH)
-    cnn_model.to(DEVICE)
-    cnn_model.eval()
-    print("CNN model loaded successfully")
-except Exception as e:
-    print(f"Could not load CNN model: {e}")
-    cnn_model = None
-
-# KNN Model
+# Load KNN Model
 try:
     knn_model = joblib.load(KNN_MODEL_PATH)
-    print("KNN model loaded successfully")
+    print(f"\nKNN model loaded successfully from: {KNN_MODEL_PATH}")
 except Exception as e:
-    print(f"Could not load KNN model: {e}")
+    print(f"ERROR: Could not load KNN model: {e}")
     knn_model = None
-
-# SVM Model
-try:
-    svm_model = joblib.load(SVM_MODEL_PATH)
-    print("SVM model loaded successfully")
-except Exception as e:
-    print(f"Could not load SVM model: {e}")
-    svm_model = None
 
 # ---- AUDIO PREPROCESSING ----
 def extract_features_from_audio(audio, sr=SAMPLE_RATE):
@@ -186,9 +117,6 @@ def extract_features_from_audio(audio, sr=SAMPLE_RATE):
     features.append(spectral_centroid)  # 1 feature
     features.append(spectral_rolloff)   # 1 feature
     
-    # Total: 13 + 13 + 12 + 20 + 7 + 6 + 2 = 73 features
-    # Need 3 more features to reach 76
-    
     # 7. Additional features to reach 76
     zcr = np.mean(librosa.feature.zero_crossing_rate(audio))
     rms = np.mean(librosa.feature.rms(y=audio))
@@ -205,9 +133,9 @@ def extract_features_from_audio(audio, sr=SAMPLE_RATE):
     
     return features
 
-def preprocess_for_cnn(audio, sr=SAMPLE_RATE):
+def create_mel_spectrogram_for_display(audio, sr=SAMPLE_RATE):
     """
-    Create mel spectrogram for CNN (128x128) matching training preprocessing.
+    Create mel spectrogram for visualization (128x128).
     """
     # Ensure fixed length (3 seconds)
     target_len = int(sr * 3)
@@ -226,49 +154,18 @@ def preprocess_for_cnn(audio, sr=SAMPLE_RATE):
     )
     mel_db = librosa.power_to_db(mel, ref=np.max)
     
-    # Ensure 128x128 size (matching IMG_SIZE from training)
+    # Ensure 128x128 size
     if mel_db.shape[1] < 128:
         mel_db = np.pad(mel_db, ((0, 0), (0, 128 - mel_db.shape[1])), mode='constant')
     else:
         mel_db = mel_db[:, :128]
     
-    # Normalize to [0, 1] range first (like ToTensor does)
+    # Normalize to [0, 1] range
     mel_normalized = (mel_db - mel_db.min()) / (mel_db.max() - mel_db.min() + 1e-8)
     
     return mel_normalized
 
-# ---- PREDICTION FUNCTIONS ----
-def predict_cnn(audio):
-    """Predict emotion using CNN model"""
-    if cnn_model is None:
-        return "CNN model not loaded", np.zeros((128, 128))
-    
-    try:
-        mel = preprocess_for_cnn(audio)
-        
-        # Normalize using the exact same method as training: (x - 0.5) / 0.5
-        # This maps from [0, 1] range to [-1, 1]
-        mel_normalized = (mel - 0.5) / 0.5
-        
-        # Convert to tensor [1, 1, 128, 128]
-        tensor = torch.tensor(mel_normalized).unsqueeze(0).unsqueeze(0).float().to(DEVICE)
-        
-        with torch.no_grad():
-            logits = cnn_model(tensor)
-            probs = torch.softmax(logits, dim=1)
-            pred_idx = torch.argmax(probs, dim=1).item()
-            confidence = probs[0, pred_idx].item()
-        
-        print(f"CNN Prediction: {EMOTIONS[pred_idx]} (confidence: {confidence:.2%})")
-        print(f"All probabilities: {[f'{EMOTIONS[i]}: {probs[0,i]:.2%}' for i in range(len(EMOTIONS))]}")
-        
-        return EMOTIONS[pred_idx], mel
-    except Exception as e:
-        print(f"CNN prediction error: {e}")
-        import traceback
-        traceback.print_exc()
-        return f"Error: {str(e)}", np.zeros((128, 128))
-
+# ---- PREDICTION FUNCTION ----
 def predict_knn(audio):
     """Predict emotion using KNN model"""
     if knn_model is None:
@@ -345,7 +242,7 @@ def predict_knn(audio):
         print(f"KNN Prediction: {emotion}")
         
         # Generate mel spectrogram for visualization
-        mel = preprocess_for_cnn(audio)
+        mel = create_mel_spectrogram_for_display(audio)
         
         return emotion, mel
     except Exception as e:
@@ -354,42 +251,11 @@ def predict_knn(audio):
         traceback.print_exc()
         return f"Error: {str(e)}", np.zeros((128, 128))
 
-def predict_svm(audio):
-    """Predict emotion using SVM model"""
-    if svm_model is None:
-        return "SVM model not loaded", np.zeros((128, 128))
-    
-    try:
-        features = extract_features_from_audio(audio)
-        features = features.reshape(1, -1)
-        
-        pred = svm_model.predict(features)[0]
-        
-        # Model returns string labels directly
-        emotion = str(pred).lower()
-        
-        # Ensure the emotion is in our valid emotions list
-        if emotion not in [e.lower() for e in EMOTIONS]:
-            print(f"Warning: Unknown emotion '{emotion}', defaulting to neutral")
-            emotion = "neutral"
-        
-        print(f"SVM Prediction: {emotion}")
-        
-        # Generate mel spectrogram for visualization
-        mel = preprocess_for_cnn(audio)
-        
-        return emotion, mel
-    except Exception as e:
-        print(f"SVM prediction error: {e}")
-        import traceback
-        traceback.print_exc()
-        return f"Error: {str(e)}", np.zeros((128, 128))
-
 # ---- GUI ----
 class EmotionGUI:
     def __init__(self, master):
         self.master = master
-        master.title("Real-time Speech Emotion Recognition")
+        master.title("Real-time Speech Emotion Recognition - KNN")
         master.geometry("650x600")
         master.configure(bg='#f0f0f0')
 
@@ -399,21 +265,11 @@ class EmotionGUI:
                                bg='#f0f0f0', fg='#2c3e50')
         title_label.pack(pady=10)
 
-        # Model selection frame
-        model_frame = tk.Frame(master, bg='#f0f0f0')
-        model_frame.pack(pady=10)
-        
-        self.model_label = tk.Label(model_frame, text="Select Model:", 
-                                     font=("Helvetica", 12), 
-                                     bg='#f0f0f0')
-        self.model_label.pack(side=tk.LEFT, padx=5)
-        
-        self.model_var = tk.StringVar(value="CNN")
-        self.model_combo = ttk.Combobox(model_frame, textvariable=self.model_var, 
-                                        values=["CNN", "KNN", "SVM"], 
-                                        state="readonly", width=15, 
-                                        font=("Helvetica", 11))
-        self.model_combo.pack(side=tk.LEFT, padx=5)
+        # Model info
+        model_info = tk.Label(master, text="Using: K-Nearest Neighbors (KNN)", 
+                             font=("Helvetica", 12), 
+                             bg='#f0f0f0', fg='#34495e')
+        model_info.pack(pady=5)
 
         # Model status
         self.status_label = tk.Label(master, text="", font=("Helvetica", 9), 
@@ -461,16 +317,11 @@ class EmotionGUI:
         self.running = False
 
     def update_model_status(self):
-        """Update status label showing which models are loaded"""
-        status = []
-        if cnn_model is not None: status.append("CNN ✓")
-        if knn_model is not None: status.append("KNN ✓")
-        if svm_model is not None: status.append("SVM ✓")
-        
-        if status:
-            self.status_label.config(text=f"Loaded models: {', '.join(status)}")
+        """Update status label showing if model is loaded"""
+        if knn_model is not None:
+            self.status_label.config(text="KNN Model: ✓ Loaded", fg="green")
         else:
-            self.status_label.config(text="⚠ No models loaded", fg='red')
+            self.status_label.config(text="⚠ KNN Model not loaded", fg='red')
 
     def update_display(self, emotion, mel):
         """Update the GUI with prediction and spectrogram"""
@@ -486,7 +337,7 @@ class EmotionGUI:
         # Convert spectrogram to image
         fig, ax = plt.subplots(figsize=(7, 3.5))
         img_plot = ax.imshow(mel, aspect='auto', origin='lower', cmap='viridis')
-        ax.set_title(f"Mel Spectrogram - {self.model_var.get()} Model", 
+        ax.set_title("Mel Spectrogram - KNN Model", 
                     fontsize=12, fontweight='bold')
         ax.set_xlabel("Time Frames", fontsize=10)
         ax.set_ylabel("Mel Frequency Bins", fontsize=10)
@@ -519,9 +370,6 @@ class EmotionGUI:
             sd.wait()
             audio = audio.flatten()
             
-            # Resample if needed (mic might be 44100 Hz but we want 16000 Hz)
-            # Note: This is just a diagnostic - actual resampling handled by sounddevice
-            
             # Diagnostic: Check audio quality
             audio_min = np.min(audio)
             audio_max = np.max(audio)
@@ -547,19 +395,9 @@ class EmotionGUI:
             if audio_std < 0.005 and audio_mean < 0.005:
                 print("INFO: Audio signal is weak - try speaking louder or closer to mic")
             
-            # Get prediction based on selected model
-            model_choice = self.model_var.get()
-            print(f"\nPredicting with {model_choice}...")
-            
-            if model_choice == "CNN":
-                emotion, mel = predict_cnn(audio)
-            elif model_choice == "KNN":
-                emotion, mel = predict_knn(audio)
-            elif model_choice == "SVM":
-                emotion, mel = predict_svm(audio)
-            else:
-                emotion = "Unknown model"
-                mel = np.zeros((128, 128))
+            # Get prediction using KNN
+            print(f"\nPredicting with KNN...")
+            emotion, mel = predict_knn(audio)
             
             print(f"Final prediction: {emotion.upper()}")
             print(f"{'='*50}\n")
@@ -581,8 +419,7 @@ class EmotionGUI:
             self.running = True
             self.start_btn.config(state=tk.DISABLED)
             self.stop_btn.config(state=tk.NORMAL)
-            self.model_combo.config(state=tk.DISABLED)
-            self.recording_label.config(text="Recording...")
+            self.recording_label.config(text="🔴 Recording...")
             print("\n=== Started listening ===")
             self.listen_loop()
 
@@ -591,7 +428,6 @@ class EmotionGUI:
         self.running = False
         self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
-        self.model_combo.config(state="readonly")
         self.recording_label.config(text="")
         print("=== Stopped listening ===\n")
 
